@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import UserLayout from "@/components/UserLayout";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import LocalBusinessSchema from "@/components/seo/LocalBusinessSchema";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,9 +17,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Roti Sajiyem",
+  title: {
+    default: "Roti Sajiyem Bakery | Roti dan Bolu Sukoharjo",
+    template: "%s | Roti Sajiyem Bakery",
+  },
   description:
-    "Sistem rekomendasi produk UMKM Roti Sajiyem",
+    "Roti Sajiyem Bakery menyediakan berbagai pilihan roti dan bolu di Blimbing, Gatak, Kabupaten Sukoharjo, Jawa Tengah.",
 };
 
 export default function RootLayout({
@@ -30,6 +34,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <LocalBusinessSchema />
+
         <UserLayout>{children}</UserLayout>
 
         {/* Floating WhatsApp Button */}
