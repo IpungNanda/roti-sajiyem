@@ -1,15 +1,18 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import { collection, getDocs } from "firebase/firestore";
-
 import {
+  FiArrowLeft,
   FiArrowRight,
   FiCheckCircle,
+  FiChevronDown,
+  FiClock,
   FiDollarSign,
   FiFilter,
+  FiHeart,
   FiInfo,
   FiRefreshCw,
   FiSearch,
@@ -17,17 +20,20 @@ import {
   FiSliders,
   FiStar,
   FiTag,
+  FiTrendingUp,
+  FiX,
 } from "react-icons/fi";
+import { GiBread, GiCakeSlice } from "react-icons/gi";
 
 import { db } from "@/lib/firebase";
-import { Product } from "@/types/product";
+import type { Product } from "@/types/product";
 import {
   getRecommendations,
-  RecommendationResult,
+  type RecommendationResult,
 } from "@/lib/recommendation/recommend";
 import { similarityToPercentage } from "@/lib/recommendation/cosineSimilarity";
 
-const categoryOptions = [
+const categories = [
   "Bolu Gulung",
   "Mandarin",
   "Prol",
@@ -37,1074 +43,642 @@ const categoryOptions = [
   "Roti Kacang",
 ];
 
-const occasionOptions = [
-  "Hajatan",
-  "Arisan",
-  "Acara Keluarga",
-  "Pengajian",
-  "Oleh-oleh",
-  "Acara Lainnya",
+const priceRanges = [
+  { label: "Semua Harga", min: undefined, max: undefined },
+  { label: "Rp12.000–Rp25.000", min: 12000, max: 25000 },
+  { label: "Rp26.000–Rp50.000", min: 26000, max: 50000 },
+  { label: "Rp51.000–Rp100.000", min: 51000, max: 100000 },
+  { label: "Rp101.000–Rp130.000", min: 101000, max: 130000 },
+  { label: "Di atas Rp130.000", min: 130001, max: undefined },
 ];
 
-const priceOptions = [
-  {
-    label: "Semua Harga",
-    min: undefined,
-    max: undefined,
-  },
-  {
-    label: "Rp12.000 - Rp25.000",
-    min: 12000,
-    max: 25000,
-  },
-  {
-    label: "Rp26.000 - Rp50.000",
-    min: 26000,
-    max: 50000,
-  },
-  {
-    label: "Rp51.000 - Rp100.000",
-    min: 51000,
-    max: 100000,
-  },
-  {
-    label: "Rp101.000 - Rp130.000",
-    min: 101000,
-    max: 130000,
-  },
-  {
-    label: "Di atas Rp130.000",
-    min: 130001,
-    max: undefined,
-  },
-];
+const sizes = ["Semua Ukuran", "Kecil", "Besar"];
 
-const sizeOptions = [
-  "Semua Ukuran",
-  "15x15",
-  "18x18",
-  "20x20",
-  "19-20",
-  "90-100",
-  "Kecil",
-  "Besar",
-];
+const fieldClass =
+  "mt-2 w-full rounded-xl border border-stone-200 bg-white px-4 py-3.5 text-sm text-stone-800 outline-none transition focus:border-green-600 focus:ring-4 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-stone-100";
 
-// ==========================================
-// VARIANTS ANIMASI
-// ==========================================
-const heroContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.12,
-      delayChildren: 0.1,
-    },
-  },
-};
-
-const heroItemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
-
-const heroIconVariants = {
-  hidden: { opacity: 0, scale: 0.6, rotate: -15 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    rotate: 0,
-    transition: {
-      duration: 0.5,
-      type: "spring" as const,
-      stiffness: 200,
-    },
-  },
-};
-
-const badgeContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.4,
-    },
-  },
-};
-
-const badgeVariants = {
-  hidden: { opacity: 0, scale: 0.8, y: 10 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    y: 0,
-    transition: { duration: 0.4, ease: "easeOut" as const },
-  },
-};
-
-const formCardVariants = {
-  hidden: { opacity: 0, y: 40 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.5,
-      ease: "easeOut" as const,
-      staggerChildren: 0.08,
-      delayChildren: 0.2,
-    },
-  },
-};
-
-const formItemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.35, ease: "easeOut" as const },
-  },
-};
-
-const errorVariants = {
-  hidden: { opacity: 0, height: 0, marginTop: 0 },
-  visible: {
-    opacity: 1,
-    height: "auto",
-    marginTop: 20,
-    transition: { duration: 0.3, ease: "easeOut" as const },
-  },
-  exit: {
-    opacity: 0,
-    height: 0,
-    marginTop: 0,
-    transition: { duration: 0.2, ease: "easeIn" as const },
-  },
-};
-
-const selectedCategoryVariants = {
-  hidden: { opacity: 0, y: 20, scale: 0.97 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.4, ease: "easeOut" as const },
-  },
-  exit: {
-    opacity: 0,
-    y: -10,
-    scale: 0.97,
-    transition: { duration: 0.2 },
-  },
-};
-
-const resultHeaderVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
-
-const resultGridVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.1,
-    },
-  },
-};
-
-const resultCardVariants = {
-  hidden: { opacity: 0, y: 40 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
-
-const infoVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
+const formatPrice = (price: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(price);
 
 export default function RekomendasiPage() {
   const [products, setProducts] = useState<Product[]>([]);
-
-  const [selectedCategory, setSelectedCategory] =
-    useState("");
-
-  const [selectedOccasion, setSelectedOccasion] =
-    useState("");
-
-  const [selectedPrice, setSelectedPrice] =
-    useState("Semua Harga");
-
-  const [selectedSize, setSelectedSize] =
-    useState("Semua Ukuran");
-
-  const [recommendations, setRecommendations] =
-    useState<RecommendationResult[]>([]);
-
+  const [category, setCategory] = useState("");
+  const [taste, setTaste] = useState("");
+  const [size, setSize] = useState("Semua Ukuran");
+  const [priceLabel, setPriceLabel] = useState("Semua Harga");
+  const [results, setResults] = useState<RecommendationResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
-
-  // ==========================================
-  // MENGAMBIL PRODUK DARI FIRESTORE
-  // ==========================================
+  const [showFilters, setShowFilters] = useState(true);
 
   useEffect(() => {
-    async function fetchProducts() {
+    let cancelled = false;
+
+    async function loadProducts() {
       try {
-        setLoading(true);
-        setError("");
+        const snapshot = await getDocs(collection(db, "products"));
 
-        const snapshot = await getDocs(
-          collection(db, "products")
-        );
+        const data: Product[] = snapshot.docs.map((item) => {
+          const raw = item.data();
 
-        const productData: Product[] = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-
-            return {
-              id: doc.id,
-              name: data.name || "",
-              category: data.category || "",
-              variant: data.variant || "",
-              taste: data.taste || "",
-              filling: data.filling || "",
-              size: data.size || "",
-              shape: data.shape || "",
-              quantity: data.quantity || "",
-
-              occasion: Array.isArray(data.occasion)
-                ? data.occasion
-                : typeof data.occasion === "string"
-                ? data.occasion
+          return {
+            id: item.id,
+            name: String(raw.name ?? ""),
+            category: String(raw.category ?? ""),
+            taste: String(raw.taste ?? ""),
+            size: String(raw.size ?? ""),
+            price: Number(raw.price ?? 0),
+            variant: String(raw.variant ?? ""),
+            filling: String(raw.filling ?? ""),
+            description: String(raw.description ?? ""),
+            imageUrl: String(raw.imageUrl ?? ""),
+            isActive: raw.isActive !== false,
+            createdAt: raw.createdAt,
+            updatedAt: raw.updatedAt,
+            occasion: Array.isArray(raw.occasion)
+              ? raw.occasion.map(String)
+              : typeof raw.occasion === "string"
+                ? raw.occasion
                     .split(",")
-                    .map((item: string) => item.trim())
+                    .map((x: string) => x.trim())
                     .filter(Boolean)
                 : [],
+          } as Product;
+        });
 
-              price: Number(data.price) || 0,
-              description: data.description || "",
-              imageUrl: data.imageUrl || "",
-              isActive: data.isActive === true,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt,
-            };
-          })
-          .filter((product) => product.isActive);
+        if (!cancelled) {
+          setProducts(data.filter((product) => product.isActive !== false));
+        }
+      } catch (e) {
+        console.error(e);
 
-        setProducts(productData);
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "Gagal mengambil data produk. Silakan coba lagi."
-        );
+        if (!cancelled) {
+          setError(
+            "Gagal mengambil data produk. Periksa koneksi dan aturan Firestore."
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    fetchProducts();
+    void loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // ==========================================
-  // PROSES REKOMENDASI
-  // ==========================================
+  const categoryProducts = useMemo(
+    () =>
+      products.filter(
+        (product) =>
+          product.category.trim().toLowerCase() ===
+          category.trim().toLowerCase()
+      ),
+    [products, category]
+  );
 
-  function handleRecommendation() {
+  const availableTastes = useMemo(
+    () => [
+      ...new Set(
+        categoryProducts.map((product) => product.taste.trim()).filter(Boolean)
+      ),
+    ],
+    [categoryProducts]
+  );
+
+  function changeCategory(value: string) {
+    setCategory(value);
+    setTaste("");
+    setResults([]);
     setError("");
-    setRecommendations([]);
+  }
 
-    if (!selectedCategory) {
-      setError(
-        "Silakan pilih kategori produk terlebih dahulu."
-      );
+  function resetForm() {
+    setCategory("");
+    setTaste("");
+    setSize("Semua Ukuran");
+    setPriceLabel("Semua Harga");
+    setResults([]);
+    setError("");
+  }
+
+  function handleSearch() {
+    setError("");
+    setResults([]);
+
+    if (!category) {
+      setError("Pilih kategori produk terlebih dahulu.");
       return;
     }
 
-    const selectedPriceOption = priceOptions.find(
-      (option) => option.label === selectedPrice
-    );
+    const price = priceRanges.find((item) => item.label === priceLabel);
+
+    setProcessing(true);
 
     try {
-      setProcessing(true);
-
-      /*
-       * Sistem sekarang langsung menggunakan
-       * kategori yang dipilih pengguna sebagai
-       * input utama sistem rekomendasi.
-       */
-      const result = getRecommendations(
-        selectedCategory,
+      const recommendations = getRecommendations(
+        category,
         products,
         {
-          occasion:
-            selectedOccasion || undefined,
-
-          minPrice:
-            selectedPriceOption?.min,
-
-          maxPrice:
-            selectedPriceOption?.max,
-
-          size:
-            selectedSize !== "Semua Ukuran"
-              ? selectedSize
-              : undefined,
+          taste: taste || undefined,
+          minPrice: price?.min,
+          maxPrice: price?.max,
+          size: size === "Semua Ukuran" ? undefined : size,
         },
         5
       );
 
-      setRecommendations(result);
+      setResults(recommendations);
 
-      if (result.length === 0) {
+      if (recommendations.length === 0) {
         setError(
-          "Belum ditemukan produk yang sesuai dengan pilihan Anda."
+          "Belum ditemukan produk yang sesuai. Coba ubah rasa, ukuran, atau anggaran."
         );
       }
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        "Terjadi kesalahan saat menghitung rekomendasi."
-      );
+    } catch (e) {
+      console.error(e);
+      setError("Terjadi kesalahan saat menghitung rekomendasi.");
     } finally {
       setProcessing(false);
     }
   }
 
-  // ==========================================
-  // FORMAT HARGA
-  // ==========================================
-
-  function formatCurrency(price: number) {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(price);
-  }
-
-  // ==========================================
-  // RESET
-  // ==========================================
-
-  function handleReset() {
-    setSelectedCategory("");
-    setSelectedOccasion("");
-    setSelectedPrice("Semua Harga");
-    setSelectedSize("Semua Ukuran");
-    setRecommendations([]);
-    setError("");
-  }
-
-  // ==========================================
-  // RENDER
-  // ==========================================
-
   return (
-    <main className="min-h-screen bg-[#f7fbea]">
-      {/* ==========================================
-          HERO
-      ========================================== */}
+    <main className="min-h-screen overflow-hidden bg-[#f7f8f1] text-stone-800">
+      {/* HERO */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-green-950 via-green-900 to-green-800 text-white">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-lime-300/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-yellow-300/10 blur-3xl" />
 
-      <section className="relative overflow-hidden border-b border-green-100 bg-white">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.2, delay: 0.3 }}
-          className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-yellow-100/70 blur-3xl"
-        />
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.2, delay: 0.5 }}
-          className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-green-100/80 blur-3xl"
-        />
-
-        <motion.div
-          variants={heroContainerVariants}
-          initial="hidden"
-          animate="visible"
-          className="relative mx-auto max-w-6xl px-5 py-14 text-center sm:px-8 lg:py-20"
-        >
-          <motion.div
-            variants={heroIconVariants}
-            className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-green-700 text-white shadow-lg"
-          >
-            <motion.span
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
+        <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-8 lg:px-8 lg:pb-20">
+          <nav className="mb-12 flex items-center justify-between sm:mb-16">
+            <Link
+              href="/"
+              className="flex items-center gap-3 rounded-xl transition hover:opacity-80"
             >
-              <FiSearch className="h-7 w-7" />
-            </motion.span>
-          </motion.div>
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-2xl text-lime-300">
+                <GiBread />
+              </span>
+              <span>
+                <span className="block text-sm font-extrabold tracking-wide">
+                  ROTI SAJIYEM
+                </span>
+                <span className="mt-1 block text-xs text-green-100/70">
+                  Kelezatan sejak 2000
+                </span>
+              </span>
+            </Link>
 
-          <motion.p
-            variants={heroItemVariants}
-            className="mt-5 text-sm font-bold uppercase tracking-[0.18em] text-green-700"
-          >
-            Sistem Rekomendasi Roti Sajiyem
-          </motion.p>
-
-          <motion.h1
-            variants={heroItemVariants}
-            className="mt-3 text-3xl font-bold leading-tight text-gray-900 sm:text-4xl lg:text-5xl"
-          >
-            Temukan Roti yang Sesuai
-            <span className="block text-green-700">
-              dengan Kebutuhan Anda
-            </span>
-          </motion.h1>
-
-          <motion.p
-            variants={heroItemVariants}
-            className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base"
-          >
-            Pilih kategori produk yang Anda sukai, tentukan
-            kebutuhan acara, budget, dan ukuran. Sistem akan
-            membantu menemukan produk Roti Sajiyem yang
-            memiliki karakteristik paling sesuai.
-          </motion.p>
-
-          <motion.div
-            variants={badgeContainerVariants}
-            initial="hidden"
-            animate="visible"
-            className="mx-auto mt-8 flex max-w-2xl flex-wrap justify-center gap-3"
-          >
-            <motion.div
-              variants={badgeVariants}
-              whileHover={{ scale: 1.05, y: -2 }}
-              className="flex items-center gap-2 rounded-full border border-green-100 bg-green-50 px-4 py-2 text-xs font-medium text-green-700"
+            <Link
+              href="/produk"
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2.5 text-xs font-bold transition hover:bg-white/10 sm:px-5 sm:text-sm"
             >
-              <FiCheckCircle className="h-4 w-4" />
-              Sesuai Karakteristik
-            </motion.div>
+              <FiShoppingBag />
+              <span className="hidden xs:inline">Katalog Produk</span>
+              <span className="xs:hidden">Produk</span>
+              <FiArrowRight />
+            </Link>
+          </nav>
 
-            <motion.div
-              variants={badgeVariants}
-              whileHover={{ scale: 1.05, y: -2 }}
-              className="flex items-center gap-2 rounded-full border border-yellow-200 bg-yellow-50 px-4 py-2 text-xs font-medium text-yellow-800"
-            >
-              <FiDollarSign className="h-4 w-4" />
-              Sesuai Budget
-            </motion.div>
+          <div className="grid items-center gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:gap-16">
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-lime-300/20 bg-white/10 px-4 py-2 text-xs font-semibold text-lime-100 sm:text-sm">
+                <FiStar className="text-lime-300" />
+                Temukan roti favorit Anda
+              </span>
 
-            <motion.div
-              variants={badgeVariants}
-              whileHover={{ scale: 1.05, y: -2 }}
-              className="flex items-center gap-2 rounded-full border border-green-100 bg-green-50 px-4 py-2 text-xs font-medium text-green-700"
-            >
-              <FiSliders className="h-4 w-4" />
-              Sesuai Kebutuhan
-            </motion.div>
-          </motion.div>
-        </motion.div>
-      </section>
+              <h1 className="mt-6 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
+                Rekomendasi Roti
+                <span className="mt-1 block text-lime-300">
+                  Sesuai Selera Anda.
+                </span>
+              </h1>
 
-      {/* ==========================================
-          FORM REKOMENDASI
-      ========================================== */}
+              <p className="mt-5 max-w-xl text-sm leading-7 text-green-50/80 sm:text-base sm:leading-8">
+                Pilih kategori, rasa, ukuran, dan anggaran untuk menemukan
+                produk Roti Sajiyem yang sesuai dengan kebutuhan Anda.
+              </p>
 
-      <section className="mx-auto max-w-6xl px-5 py-10 sm:px-8 lg:py-12">
-        <motion.div
-          variants={formCardVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.1 }}
-          className="overflow-hidden rounded-3xl border border-green-100 bg-white shadow-sm"
-        >
-          {/* FORM HEADER */}
-
-          <motion.div
-            variants={formItemVariants}
-            className="border-b border-green-100 bg-green-50/70 px-6 py-6 md:px-8"
-          >
-            <div className="flex items-start gap-4">
-              <motion.div
-                whileHover={{ rotate: 15, scale: 1.1 }}
-                transition={{ type: "spring", stiffness: 300 }}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-700 text-white shadow-sm"
-              >
-                <FiFilter className="h-5 w-5" />
-              </motion.div>
-
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  Tentukan Kebutuhan Anda
-                </h2>
-
-                <p className="mt-1 text-sm leading-6 text-gray-500">
-                  Pilih kategori produk dan isi pilihan
-                  berikut untuk mendapatkan rekomendasi.
-                </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs text-green-50 sm:text-sm">
+                  <FiCheckCircle className="text-lime-300" />
+                  Pilihan fleksibel
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs text-green-50 sm:text-sm">
+                  <FiDollarSign className="text-lime-300" />
+                  Sesuai anggaran
+                </div>
               </div>
             </div>
-          </motion.div>
 
-          {/* FORM BODY */}
-
-          <div className="p-6 md:p-8">
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* KATEGORI PRODUK */}
-
-              <motion.div
-                variants={formItemVariants}
-                className="md:col-span-2"
-              >
-                <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
-                  <FiShoppingBag className="h-4 w-4 text-green-700" />
-                  Kategori Produk yang Anda Sukai *
-                </label>
-
-                <p className="mb-3 text-xs leading-5 text-gray-500">
-                  Pilih kategori produk yang paling Anda
-                  sukai sebagai dasar sistem dalam memberikan
-                  rekomendasi.
-                </p>
-
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => {
-                    setSelectedCategory(e.target.value);
-                    setRecommendations([]);
-                    setError("");
-                  }}
-                  disabled={loading}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-gray-50"
-                >
-                  <option value="">
-                    -- Pilih Kategori Produk --
-                  </option>
-
-                  {categoryOptions.map((category) => (
-                    <option
-                      key={category}
-                      value={category}
-                    >
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </motion.div>
-
-              {/* ACARA */}
-
-              <motion.div variants={formItemVariants}>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Untuk Acara Apa?
-                </label>
-
-                <select
-                  value={selectedOccasion}
-                  onChange={(e) => {
-                    setSelectedOccasion(e.target.value);
-                    setRecommendations([]);
-                    setError("");
-                  }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                >
-                  <option value="">
-                    Semua Acara
-                  </option>
-
-                  {occasionOptions.map((occasion) => (
-                    <option
-                      key={occasion}
-                      value={occasion}
-                    >
-                      {occasion}
-                    </option>
-                  ))}
-                </select>
-              </motion.div>
-
-              {/* HARGA */}
-
-              <motion.div variants={formItemVariants}>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Range Harga
-                </label>
-
-                <select
-                  value={selectedPrice}
-                  onChange={(e) => {
-                    setSelectedPrice(e.target.value);
-                    setRecommendations([]);
-                    setError("");
-                  }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                >
-                  {priceOptions.map((option) => (
-                    <option
-                      key={option.label}
-                      value={option.label}
-                    >
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </motion.div>
-
-              {/* UKURAN */}
-
-              <motion.div
-                variants={formItemVariants}
-                className="md:col-span-2"
-              >
-                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Ukuran
-                </label>
-
-                <select
-                  value={selectedSize}
-                  onChange={(e) => {
-                    setSelectedSize(e.target.value);
-                    setRecommendations([]);
-                    setError("");
-                  }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                >
-                  {sizeOptions.map((size) => (
-                    <option
-                      key={size}
-                      value={size}
-                    >
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </motion.div>
-            </div>
-
-            {/* BUTTON */}
-
-            <motion.div
-              variants={formItemVariants}
-              className="mt-8 flex flex-col gap-3 sm:flex-row"
-            >
-              <motion.button
-                type="button"
-                onClick={handleRecommendation}
-                disabled={
-                  processing ||
-                  loading ||
-                  products.length === 0
-                }
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-700 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-gray-400"
-              >
-                {processing ? (
-                  <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-200 border-t-white" />
-                    Mencari Rekomendasi...
-                  </>
-                ) : (
-                  <>
-                    <FiSearch className="h-4 w-4" />
-                    Tampilkan Rekomendasi
-                  </>
-                )}
-              </motion.button>
-
-              <motion.button
-                type="button"
-                onClick={handleReset}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-6 py-3.5 text-sm font-semibold text-gray-700 transition hover:border-green-200 hover:bg-green-50 hover:text-green-700"
-              >
-                <motion.span
-                  whileHover={{ rotate: -180 }}
-                  transition={{ duration: 0.4 }}
-                >
-                  <FiRefreshCw className="h-4 w-4" />
-                </motion.span>
-                Reset
-              </motion.button>
-            </motion.div>
-
-            {/* ERROR */}
-
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  variants={errorVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  className="flex items-start gap-3 overflow-hidden rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700"
-                >
-                  <FiInfo className="mt-0.5 h-5 w-5 shrink-0" />
-                  <span>{error}</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </motion.div>
-
-        {/* ==========================================
-            KATEGORI YANG DIPILIH
-        ========================================== */}
-
-        <AnimatePresence mode="wait">
-          {selectedCategory && (
-            <motion.div
-              key={selectedCategory}
-              variants={selectedCategoryVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="mt-8 overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm"
-            >
-              <div className="border-b border-green-100 bg-green-50/50 px-6 py-4">
-                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-green-700">
-                  <FiCheckCircle className="h-4 w-4" />
-                  Kategori yang Dipilih
-                </p>
-              </div>
-
-              <div className="p-6">
-                <div className="flex items-center gap-4">
-                  <motion.div
-                    initial={{ scale: 0.6, rotate: -15 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 200,
-                      delay: 0.1,
-                    }}
-                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-green-700 text-white"
-                  >
-                    <FiShoppingBag className="h-6 w-6" />
-                  </motion.div>
-
+            <div className="mx-auto w-full max-w-sm lg:max-w-none">
+              <div className="rounded-[2rem] border border-white/15 bg-white/10 p-5 shadow-2xl backdrop-blur-md sm:p-7">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs font-medium text-gray-500">
-                      Kategori Produk
+                    <p className="text-sm text-green-50/70">
+                      Mulai dari sini
                     </p>
-
-                    <h2 className="mt-1 text-xl font-bold text-gray-900">
-                      {selectedCategory}
+                    <h2 className="mt-2 text-xl font-extrabold sm:text-2xl">
+                      Temukan pilihanmu
                     </h2>
-
-                    <p className="mt-1 text-sm text-gray-500">
-                      Kategori ini digunakan sebagai dasar
-                      pencarian rekomendasi.
-                    </p>
                   </div>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-lime-300/15 text-2xl text-lime-300">
+                    <GiCakeSlice />
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  {[
+                    {
+                      icon: <FiFilter />,
+                      title: "Pilih kategori",
+                      desc: "Tentukan jenis roti favorit",
+                    },
+                    {
+                      icon: <FiDollarSign />,
+                      title: "Atur anggaran",
+                      desc: "Sesuaikan dengan budget Anda",
+                    },
+                    {
+                      icon: <FiTrendingUp />,
+                      title: "Lihat rekomendasi",
+                      desc: "Temukan produk yang relevan",
+                    },
+                  ].map((item, index) => (
+                    <div
+                      key={item.title}
+                      className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.07] p-3 sm:p-4"
+                    >
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-lime-300/15 text-xl text-lime-300">
+                        {item.icon}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold">{item.title}</p>
+                        <p className="mt-1 text-xs text-green-50/65">
+                          {item.desc}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-lime-300">
+                        0{index + 1}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ==========================================
-            HASIL REKOMENDASI
-        ========================================== */}
-
-        <AnimatePresence>
-          {recommendations.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="mt-14"
-            >
-              <motion.div
-                variants={resultHeaderVariants}
-                initial="hidden"
-                animate="visible"
-                className="mb-8 text-center"
-              >
-                <motion.div
-                  initial={{ scale: 0.6, rotate: -15 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 200,
-                    delay: 0.15,
-                  }}
-                  className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-yellow-100 text-yellow-700"
-                >
-                  <motion.span
-                    animate={{ rotate: [0, 10, -10, 0] }}
-                    transition={{
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                  >
-                    <FiStar className="h-5 w-5" />
-                  </motion.span>
-                </motion.div>
-
-                <p className="mt-4 text-sm font-bold uppercase tracking-[0.18em] text-green-700">
-                  Hasil Rekomendasi
-                </p>
-
-                <h2 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">
-                  Rekomendasi Untuk Anda
-                </h2>
-
-                <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                  Berikut produk yang paling sesuai berdasarkan
-                  kategori dan pilihan karakteristik produk.
-                </p>
-              </motion.div>
-
-              <motion.div
-                variants={resultGridVariants}
-                initial="hidden"
-                animate="visible"
-                className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
-              >
-                {recommendations.map(
-                  ({ product, similarity }) => {
-                    const percentage =
-                      similarityToPercentage(similarity);
-
-                    return (
-                      <motion.div
-                        key={product.id}
-                        variants={resultCardVariants}
-                        whileHover={{ y: -8 }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 200,
-                          damping: 20,
-                        }}
-                        className="group overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm transition hover:shadow-lg"
-                      >
-                        {/* GAMBAR */}
-
-                        <div className="relative h-56 overflow-hidden bg-gray-100">
-                          {product.imageUrl ? (
-                            <motion.img
-                              src={product.imageUrl}
-                              alt={product.name}
-                              whileHover={{ scale: 1.08 }}
-                              transition={{ duration: 0.5 }}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                              Tidak ada gambar
-                            </div>
-                          )}
-
-                          {/* SCORE */}
-
-                          <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{
-                              duration: 0.4,
-                              delay: 0.2,
-                            }}
-                            className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-green-700 px-3 py-1.5 text-xs font-bold text-white shadow-md"
-                          >
-                            <FiCheckCircle className="h-3.5 w-3.5" />
-                            {percentage}% mirip
-                          </motion.div>
-                        </div>
-
-                        {/* INFO */}
-
-                        <div className="p-5">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-bold uppercase tracking-wide text-green-700">
-                              {product.category}
-                            </p>
-
-                            <motion.span
-                              whileHover={{ rotate: 15, scale: 1.15 }}
-                              transition={{ type: "spring", stiffness: 300 }}
-                            >
-                              <FiTag className="h-4 w-4 text-yellow-500" />
-                            </motion.span>
-                          </div>
-
-                          <h3 className="mt-2 text-lg font-bold text-gray-900">
-                            {product.name}
-                          </h3>
-
-                          {product.variant && (
-                            <p className="mt-1 text-sm text-gray-500">
-                              {product.variant}
-                            </p>
-                          )}
-
-                          <div className="mt-4 space-y-2">
-                            {product.taste && (
-                              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
-                                <span className="text-gray-500">
-                                  Rasa
-                                </span>
-
-                                <span className="font-medium text-gray-800">
-                                  {product.taste}
-                                </span>
-                              </div>
-                            )}
-
-                            {product.filling && (
-                              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
-                                <span className="text-gray-500">
-                                  Isian
-                                </span>
-
-                                <span className="font-medium text-gray-800">
-                                  {product.filling}
-                                </span>
-                              </div>
-                            )}
-
-                            {product.size && (
-                              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
-                                <span className="text-gray-500">
-                                  Ukuran
-                                </span>
-
-                                <span className="font-medium text-gray-800">
-                                  {product.size}
-                                </span>
-                              </div>
-                            )}
-
-                            {product.quantity && (
-                              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
-                                <span className="text-gray-500">
-                                  Jumlah
-                                </span>
-
-                                <span className="font-medium text-gray-800">
-                                  {product.quantity}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* HARGA */}
-
-                          <div className="mt-5 flex items-end justify-between gap-3">
-                            <div>
-                              <p className="text-xs text-gray-400">
-                                Harga
-                              </p>
-
-                              <p className="mt-1 text-lg font-bold text-green-700">
-                                {formatCurrency(product.price)}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* DETAIL */}
-
-                          <motion.div
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            <Link
-                              href={`/produk/${product.id}`}
-                              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-800"
-                            >
-                              Lihat Detail
-                              <motion.span
-                                animate={{ x: [0, 4, 0] }}
-                                transition={{
-                                  duration: 1.5,
-                                  repeat: Infinity,
-                                  ease: "easeInOut",
-                                }}
-                              >
-                                <FiArrowRight className="h-4 w-4" />
-                              </motion.span>
-                            </Link>
-                          </motion.div>
-                        </div>
-                      </motion.div>
-                    );
-                  }
-                )}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ==========================================
-            INFORMASI ALGORITMA
-        ========================================== */}
-
-        <AnimatePresence>
-          {!loading &&
-            !processing &&
-            recommendations.length === 0 &&
-            !error && (
-              <motion.div
-                variants={infoVariants}
-                initial="hidden"
-                animate="visible"
-                exit={{ opacity: 0, y: -10 }}
-                className="mt-10 rounded-2xl border border-green-100 bg-white p-6"
-              >
-                <div className="flex items-start gap-4">
-                  <motion.div
-                    animate={{ y: [0, -3, 0] }}
-                    transition={{
-                      duration: 2.5,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-yellow-100 text-yellow-700"
-                  >
-                    <FiInfo className="h-5 w-5" />
-                  </motion.div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900">
-                      Cara Kerja Sistem Rekomendasi
-                    </h3>
-
-                    <p className="mt-2 text-sm leading-6 text-gray-600">
-                      Sistem menggunakan kategori, varian,
-                      rasa, isian, ukuran, bentuk, jumlah,
-                      kebutuhan acara, dan harga untuk menemukan
-                      produk yang memiliki karakteristik serupa
-                      dengan pilihan Anda.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-        </AnimatePresence>
+            </div>
+          </div>
+        </div>
       </section>
+
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        {/* FORM FILTER */}
+        <section className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-[0_15px_50px_-30px_rgba(20,83,45,0.25)] sm:p-8 lg:p-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-green-50 text-xl text-green-800 sm:h-14 sm:w-14 sm:text-2xl">
+                <FiSliders />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-green-700">
+                  Atur preferensi
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-stone-900 sm:text-2xl">
+                  Roti seperti apa yang Anda cari?
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-stone-500">
+                  Tentukan kategori produk, lalu sesuaikan pilihan lainnya.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((current) => !current)}
+              aria-expanded={showFilters}
+              aria-label={showFilters ? "Tutup filter" : "Buka filter"}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 text-stone-600 transition hover:bg-stone-50 sm:hidden"
+            >
+              {showFilters ? <FiX /> : <FiChevronDown />}
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} className="animate-pulse">
+                  <div className="mb-3 h-4 w-24 rounded bg-stone-200" />
+                  <div className="h-12 rounded-xl bg-stone-100" />
+                </div>
+              ))}
+              <p className="text-sm text-stone-500 sm:col-span-2">
+                Memuat data produk...
+              </p>
+            </div>
+          ) : (
+            <div
+              className={`${showFilters ? "mt-7 grid" : "hidden"} gap-x-5 gap-y-6 sm:grid sm:grid-cols-2`}
+            >
+              <label className="block text-sm font-semibold text-stone-700">
+                Kategori produk <span className="text-red-500">*</span>
+                <select
+                  value={category}
+                  onChange={(e) => changeCategory(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="">Pilih kategori</option>
+                  {categories.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-semibold text-stone-700">
+                Rasa
+                <select
+                  value={taste}
+                  onChange={(e) => {
+                    setTaste(e.target.value);
+                    setResults([]);
+                    setError("");
+                  }}
+                  className={fieldClass}
+                  disabled={!category}
+                >
+                  <option value="">Semua rasa</option>
+                  {availableTastes.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-semibold text-stone-700">
+                Ukuran
+                <select
+                  value={size}
+                  onChange={(e) => {
+                    setSize(e.target.value);
+                    setResults([]);
+                    setError("");
+                  }}
+                  className={fieldClass}
+                >
+                  {sizes.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-semibold text-stone-700">
+                Anggaran harga
+                <select
+                  value={priceLabel}
+                  onChange={(e) => {
+                    setPriceLabel(e.target.value);
+                    setResults([]);
+                    setError("");
+                  }}
+                  className={fieldClass}
+                >
+                  {priceRanges.map((item) => (
+                    <option key={item.label} value={item.label}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
+          <div
+            className={`${loading ? "hidden" : ""} ${showFilters ? "flex" : "hidden"} mt-7 flex-col gap-3 sm:flex sm:flex-row`}
+          >
+            <button
+              type="button"
+              onClick={handleSearch}
+              disabled={loading || processing || products.length === 0}
+              className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-green-800 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-green-900/10 transition hover:-translate-y-0.5 hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+            >
+              {processing ? (
+                <>
+                  <FiRefreshCw className="animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                <>
+                  <FiSearch />
+                  Cari Rekomendasi
+                  <FiArrowRight />
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={resetForm}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-6 py-3.5 text-sm font-bold text-stone-600 transition hover:border-stone-300 hover:bg-stone-50"
+            >
+              <FiRefreshCw />
+              Reset Pilihan
+            </button>
+          </div>
+
+          {error && (
+            <div
+              role="status"
+              className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
+            >
+              <FiInfo className="mt-0.5 shrink-0 text-lg" />
+              <p>{error}</p>
+            </div>
+          )}
+
+          {!loading && products.length === 0 && !error && (
+            <p className="mt-5 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">
+              Belum ada produk aktif yang tersedia untuk direkomendasikan.
+            </p>
+          )}
+        </section>
+
+        {/* HASIL REKOMENDASI */}
+        {results.length > 0 && (
+          <section className="mt-12 sm:mt-16">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-green-700">
+                  Hasil pencarian
+                </p>
+                <h2 className="mt-2 text-2xl font-extrabold text-stone-900 sm:text-3xl">
+                  Rekomendasi untuk Anda
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  Produk pilihan berdasarkan preferensi yang Anda masukkan.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-sm font-bold text-green-800">
+                <FiCheckCircle />
+                {results.length} produk ditemukan
+              </span>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {results.map(({ product, similarity }, index) => {
+                const score = Math.min(
+                  100,
+                  Math.max(0, similarityToPercentage(similarity))
+                );
+
+                return (
+                  <article
+                    key={product.id}
+                    className="group flex h-full flex-col overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-green-950/10"
+                  >
+                    <div className="relative h-52 overflow-hidden bg-gradient-to-br from-green-50 to-stone-100 sm:h-56">
+                      {product.imageUrl ? (
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 text-stone-400">
+                          <GiCakeSlice className="text-5xl" />
+                          <span className="text-xs">
+                            Gambar belum tersedia
+                          </span>
+                        </div>
+                      )}
+
+                      <span className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/95 px-3 py-1.5 text-xs font-bold text-green-800 shadow-sm">
+                        <FiStar />
+                        Pilihan #{index + 1}
+                      </span>
+
+                      <span className="absolute right-4 top-4 rounded-full bg-green-800/90 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-sm">
+                        {score}% cocok
+                      </span>
+                    </div>
+
+                    <div className="flex flex-1 flex-col p-5 sm:p-6">
+                      <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-green-700">
+                        <FiTag />
+                        {product.category}
+                      </p>
+
+                      <h3 className="mt-2 text-lg font-extrabold leading-snug text-stone-900">
+                        {product.name}
+                      </h3>
+
+                      <p className="mt-3 text-xl font-extrabold text-green-800">
+                        {formatPrice(product.price)}
+                      </p>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <div className="rounded-xl bg-stone-50 p-3">
+                          <p className="flex items-center gap-1.5 text-[11px] font-medium text-stone-500">
+                            <FiHeart />
+                            Rasa
+                          </p>
+                          <p className="mt-1 truncate text-sm font-bold text-stone-800">
+                            {product.taste || "Tidak tersedia"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-stone-50 p-3">
+                          <p className="flex items-center gap-1.5 text-[11px] font-medium text-stone-500">
+                            <FiShoppingBag />
+                            Ukuran
+                          </p>
+                          <p className="mt-1 truncate text-sm font-bold text-stone-800">
+                            {product.size || "Tidak tersedia"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold text-stone-500">
+                            Skor kemiripan
+                          </span>
+                          <span className="font-extrabold text-green-800">
+                            {score}%
+                          </span>
+                        </div>
+
+                        <div
+                          className="h-2 overflow-hidden rounded-full bg-stone-100"
+                          role="progressbar"
+                          aria-label={`Skor kemiripan ${product.name}`}
+                          aria-valuenow={score}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        >
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-green-600 to-lime-400 transition-all duration-700"
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <Link
+                        href={`/produk/${product.id}`}
+                        className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-green-800 px-4 py-3 text-sm font-bold text-green-800 transition hover:bg-green-800 hover:text-white"
+                      >
+                        Lihat Detail Produk
+                        <FiArrowRight />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* CTA */}
+        <section className="mt-12 rounded-3xl border border-green-100 bg-green-50/80 p-5 sm:mt-16 sm:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl text-green-800 shadow-sm">
+              <GiBread />
+            </div>
+
+            <div>
+              <h2 className="font-extrabold text-stone-900">
+                Ingin melihat pilihan lainnya?
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-stone-600">
+                Jelajahi katalog lengkap produk Roti Sajiyem dan temukan
+                pilihan favorit Anda.
+              </p>
+            </div>
+
+            <Link
+              href="/produk"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-green-900 sm:ml-auto"
+            >
+              Jelajahi Produk
+              <FiArrowRight />
+            </Link>
+          </div>
+        </section>
+
+        <footer className="pb-2 pt-8 text-center text-xs text-stone-400 sm:pt-10">
+          © {new Date().getFullYear()} Roti Sajiyem. Semua hak dilindungi.
+        </footer>
+      </div>
     </main>
   );
 }

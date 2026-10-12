@@ -1,8 +1,8 @@
+
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -11,16 +11,15 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
-
 import {
-  FiAlertCircle,
-  FiArrowLeft,
-  FiCheckCircle,
   FiEdit2,
   FiPackage,
   FiPlus,
   FiRefreshCw,
   FiTrash2,
+  FiAlertCircle,
+  FiTag,
+  FiMaximize2,
 } from "react-icons/fi";
 
 import { db } from "@/lib/firebase";
@@ -29,895 +28,444 @@ type Product = {
   id: string;
   name: string;
   category: string;
-  variant: string;
   taste: string;
+  size: string;
   price: number;
   isActive: boolean;
 };
 
-// ==========================================
-// VARIANTS ANIMASI
-// ==========================================
-const headerVariants = {
-  hidden: { opacity: 0, y: -20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.5,
-      ease: "easeOut" as const,
-      staggerChildren: 0.1,
-      delayChildren: 0.1,
-    },
-  },
-};
-
-const headerItemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.4, ease: "easeOut" as const },
-  },
-};
-
-const headerLogoVariants = {
-  hidden: { opacity: 0, scale: 0.7, rotate: -15 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    rotate: 0,
-    transition: {
-      duration: 0.5,
-      type: "spring" as const,
-      stiffness: 200,
-    },
-  },
-};
-
-const summaryContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2,
-    },
-  },
-};
-
-const summaryCardVariants = {
-  hidden: { opacity: 0, y: 30, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-};
-
-const tableWrapperVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, delay: 0.3, ease: "easeOut" as const },
-  },
-};
-
-const tableHeaderVariants = {
-  hidden: { opacity: 0, x: -20 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.4, delay: 0.4, ease: "easeOut" as const },
-  },
-};
-
-const errorVariants = {
-  hidden: {
-    opacity: 0,
-    height: 0,
-    marginTop: 0,
-    x: 0,
-  },
-  visible: {
-    opacity: 1,
-    height: "auto",
-    marginTop: 20,
-    x: [0, -8, 8, -6, 6, -3, 3, 0],
-    transition: {
-      duration: 0.5,
-      x: { duration: 0.5, ease: "easeInOut" },
-      opacity: { duration: 0.3 },
-      height: { duration: 0.3 },
-      marginTop: { duration: 0.3 },
-    },
-  },
-  exit: {
-    opacity: 0,
-    height: 0,
-    marginTop: 0,
-    transition: { duration: 0.2 },
-  },
-};
-
-const stateCardVariants = {
-  hidden: { opacity: 0, y: 20, scale: 0.97 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.5, ease: "easeOut" as const },
-  },
-  exit: {
-    opacity: 0,
-    y: -10,
-    scale: 0.97,
-    transition: { duration: 0.2 },
-  },
-};
-
-const tbodyVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-      delayChildren: 0.1,
-    },
-  },
-};
-
-const rowVariants = {
-  hidden: { opacity: 0, x: -15 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.35, ease: "easeOut" as const },
-  },
-  exit: {
-    opacity: 0,
-    x: 30,
-    height: 0,
-    transition: { duration: 0.25, ease: "easeIn" as const },
-  },
-};
-
-const bottomInfoVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.4, delay: 0.2, ease: "easeOut" as const },
-  },
-};
+const rupiah = (value: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
 
 export default function ProdukAdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(
-    null
-  );
-  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // ==========================================
-  // Mengambil produk dari Firestore
-  // ==========================================
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async (isRefresh = false) => {
     try {
-      setIsLoading(true);
-      setErrorMessage("");
-
-      const productsRef = collection(db, "products");
-
-      const productsQuery = query(
-        productsRef,
-        orderBy("createdAt", "desc")
-      );
-
-      const snapshot = await getDocs(productsQuery);
-
-      const productData: Product[] = snapshot.docs.map(
-        (product) => {
-          const data = product.data();
-
-          return {
-            id: product.id,
-            name: data.name || "",
-            category: data.category || "",
-            variant: data.variant || "",
-            taste: data.taste || "",
-            price: Number(data.price || 0),
-            isActive: data.isActive ?? true,
-          };
-        }
-      );
-
-      setProducts(productData);
-    } catch (error) {
-      console.error(
-        "Gagal mengambil produk:",
-        error
-      );
-
-      if (error instanceof Error) {
-        setErrorMessage(error.message);
+      if (isRefresh) {
+        setRefreshing(true);
       } else {
-        setErrorMessage(
-          "Gagal mengambil data produk."
-        );
+        setLoading(true);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  // ==========================================
-  // Jalankan saat halaman dibuka
-  // ==========================================
-  useEffect(() => {
-    fetchProducts();
-  }, []);
+      setError("");
 
-  // ==========================================
-  // Hapus Produk
-  // ==========================================
-  const handleDelete = async (
-    id: string,
-    name: string
-  ) => {
-    const confirmed = window.confirm(
-      `Apakah Anda yakin ingin menghapus produk "${name}"?\n\nData produk yang dihapus tidak dapat dikembalikan.`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setDeletingId(id);
-      setErrorMessage("");
-
-      // Hapus dokumen dari Firestore
-      await deleteDoc(
-        doc(db, "products", id)
-      );
-
-      // Hapus produk dari tampilan tanpa reload
-      setProducts((currentProducts) =>
-        currentProducts.filter(
-          (product) => product.id !== id
+      const snap = await getDocs(
+        query(
+          collection(db, "products"),
+          orderBy("createdAt", "desc")
         )
       );
 
-      alert(
-        `Produk "${name}" berhasil dihapus.`
-      );
-    } catch (error) {
-      console.error(
-        "Gagal menghapus produk:",
-        error
-      );
+      const loadedProducts: Product[] = snap.docs.map((item) => {
+        const data = item.data();
 
-      if (error instanceof Error) {
-        setErrorMessage(error.message);
-      } else {
-        setErrorMessage(
-          "Gagal menghapus produk."
-        );
-      }
+        return {
+          id: item.id,
+          name: String(data.name ?? ""),
+          category: String(data.category ?? ""),
+          taste: String(data.taste ?? ""),
+          size: String(data.size ?? ""),
+          price: Number(data.price ?? 0),
+          // Dokumen lama tanpa isActive tetap dianggap aktif.
+          isActive: data.isActive !== false,
+        };
+      });
+
+      setProducts(loadedProducts);
+    } catch (err) {
+      console.error("Gagal mengambil produk:", err);
+      setError(
+        "Gagal memuat produk. Periksa koneksi internet dan aturan Firestore."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchProducts();
+
+  }, [fetchProducts]);
+
+  async function handleDelete(product: Product) {
+    const confirmed = window.confirm(
+      `Hapus produk "${product.name}"?\n\nTindakan ini tidak dapat dibatalkan.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(product.id);
+      setError("");
+
+      await deleteDoc(doc(db, "products", product.id));
+
+      setProducts((current) =>
+        current.filter((item) => item.id !== product.id)
+      );
+    } catch (err) {
+      console.error("Gagal menghapus produk:", err);
+      setError("Produk gagal dihapus. Silakan coba lagi.");
     } finally {
       setDeletingId(null);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-[#f7fbea]">
-      {/* Header */}
-      <motion.header
-        variants={headerVariants}
-        initial="hidden"
-        animate="visible"
-        className="border-b border-green-100 bg-white"
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
-          <motion.div variants={headerItemVariants}>
-            <div className="flex items-center gap-3">
-              <motion.div
-                variants={headerLogoVariants}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-700 text-white shadow-sm"
-              >
-                <motion.span
-                  animate={{ rotate: [0, 8, -8, 0] }}
-                  transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                >
-                  <FiPackage className="h-5 w-5" />
-                </motion.span>
-              </motion.div>
+    <main className="min-h-screen min-w-0 bg-[#f7fbea]">
+      <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8">
+        {/* Header halaman */}
+        <section className="overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm">
+          <header className="flex flex-col gap-5 border-b border-green-100 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700 sm:h-14 sm:w-14">
+                <FiPackage size={25} />
+              </div>
 
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-                  Produk
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
+                  Daftar Produk
                 </h1>
-
-                <p className="mt-0.5 text-sm text-gray-500">
+                <p className="mt-1 text-sm leading-5 text-gray-500">
                   Kelola produk Roti Sajiyem
                 </p>
               </div>
             </div>
-          </motion.div>
 
-          {/* Tombol Header */}
-          <motion.div
-            variants={headerItemVariants}
-            className="flex flex-col gap-2.5 sm:flex-row"
-          >
-            {/* Beranda Admin */}
-            <motion.div
-              whileHover={{ scale: 1.03, y: -2 }}
-              whileTap={{ scale: 0.97 }}
-            >
-              <Link
-                href="/admin"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-green-100 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+              <button
+                type="button"
+                onClick={() => void fetchProducts(true)}
+                disabled={loading || refreshing}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-green-200 px-4 py-2.5 text-sm font-semibold text-green-700 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <motion.span
-                  animate={{ x: [0, -3, 0] }}
-                  transition={{
-                    duration: 1.8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                >
-                  <FiArrowLeft className="h-4 w-4" />
-                </motion.span>
-                Beranda Admin
-              </Link>
-            </motion.div>
+                <FiRefreshCw
+                  className={refreshing ? "animate-spin" : ""}
+                  size={17}
+                />
+                {refreshing ? "Memuat..." : "Refresh Data"}
+              </button>
 
-            {/* Tambah Produk */}
-            <motion.div
-              whileHover={{ scale: 1.03, y: -2 }}
-              whileTap={{ scale: 0.97 }}
-            >
               <Link
                 href="/admin/produk/tambah"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-800 hover:shadow-md"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 focus:outline-none focus:ring-4 focus:ring-green-100"
               >
-                <motion.span
-                  animate={{ rotate: [0, 90, 0] }}
-                  transition={{
-                    duration: 2.5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                >
-                  <FiPlus className="h-4 w-4" />
-                </motion.span>
+                <FiPlus size={18} />
                 Tambah Produk
               </Link>
-            </motion.div>
-          </motion.div>
-        </div>
-      </motion.header>
-
-      {/* Content */}
-      <main className="mx-auto max-w-7xl px-5 py-6 sm:px-8 lg:py-8">
-        {/* Summary */}
-        <motion.div
-          variants={summaryContainerVariants}
-          initial="hidden"
-          animate="visible"
-          className="mb-6 grid gap-4 sm:grid-cols-3"
-        >
-          <motion.div
-            variants={summaryCardVariants}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ type: "spring", stiffness: 200 }}
-            className="rounded-2xl border border-green-100 bg-white p-5 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Total Produk
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {isLoading ? "-" : products.length}
-                </p>
-              </div>
-
-              <motion.div
-                whileHover={{ rotate: 10, scale: 1.1 }}
-                transition={{ type: "spring", stiffness: 300 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-50 text-green-700"
-              >
-                <FiPackage className="h-5 w-5" />
-              </motion.div>
             </div>
-          </motion.div>
+          </header>
 
-          <motion.div
-            variants={summaryCardVariants}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ type: "spring", stiffness: 200 }}
-            className="rounded-2xl border border-green-100 bg-white p-5 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Produk Aktif
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {isLoading
-                    ? "-"
-                    : products.filter(
-                        (product) =>
-                          product.isActive
-                      ).length}
-                </p>
-              </div>
-
-              <motion.div
-                whileHover={{ rotate: 10, scale: 1.1 }}
-                transition={{ type: "spring", stiffness: 300 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-50 text-green-700"
-              >
-                <FiCheckCircle className="h-5 w-5" />
-              </motion.div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            variants={summaryCardVariants}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ type: "spring", stiffness: 200 }}
-            className="rounded-2xl border border-yellow-100 bg-white p-5 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Produk Tidak Aktif
-                </p>
-
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {isLoading
-                    ? "-"
-                    : products.filter(
-                        (product) =>
-                          !product.isActive
-                      ).length}
-                </p>
-              </div>
-
-              <motion.div
-                whileHover={{ rotate: 10, scale: 1.1 }}
-                transition={{ type: "spring", stiffness: 300 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-50 text-yellow-700"
-              >
-                <FiAlertCircle className="h-5 w-5" />
-              </motion.div>
-            </div>
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          variants={tableWrapperVariants}
-          initial="hidden"
-          animate="visible"
-          className="overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm"
-        >
-          {/* Table Header */}
-          <motion.div
-            variants={tableHeaderVariants}
-            className="flex flex-col gap-4 border-b border-green-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"
-          >
-            <div>
-              <h2 className="font-bold text-gray-900">
-                Daftar Produk
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Produk yang tersedia di Roti Sajiyem
+          {/* Ringkasan */}
+          <div className="grid grid-cols-2 gap-3 border-b border-green-100 bg-green-50/40 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
+            <div className="rounded-xl border border-green-100 bg-white p-4">
+              <p className="text-xs font-medium text-gray-500 sm:text-sm">
+                Total Produk
+              </p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">
+                {loading ? "..." : products.length}
               </p>
             </div>
 
-            <motion.button
-              type="button"
-              onClick={fetchProducts}
-              disabled={isLoading}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              className="inline-flex w-fit items-center gap-2 rounded-xl border border-green-100 bg-green-50 px-4 py-2.5 text-xs font-semibold text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
+            <div className="rounded-xl border border-green-100 bg-white p-4">
+              <p className="text-xs font-medium text-gray-500 sm:text-sm">
+                Produk Aktif
+              </p>
+              <p className="mt-2 text-2xl font-bold text-green-700">
+                {loading
+                  ? "..."
+                  : products.filter((product) => product.isActive).length}
+              </p>
+            </div>
+
+            <div className="col-span-2 rounded-xl border border-green-100 bg-white p-4 sm:col-span-1">
+              <p className="text-xs font-medium text-gray-500 sm:text-sm">
+                Total Kategori
+              </p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">
+                {loading
+                  ? "..."
+                  : new Set(
+                      products
+                        .map((product) => product.category)
+                        .filter(Boolean)
+                    ).size}
+              </p>
+            </div>
+          </div>
+
+          {/* Pesan error */}
+          {error && (
+            <div
+              role="alert"
+              className="m-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:m-6"
             >
+              <FiAlertCircle className="mt-0.5 shrink-0" size={19} />
+              <p>{error}</p>
+            </div>
+          )}
+
+          {/* Kondisi loading */}
+          {loading ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-5 py-16">
               <FiRefreshCw
-                className={`h-4 w-4 ${
-                  isLoading
-                    ? "animate-spin"
-                    : ""
-                }`}
+                className="animate-spin text-green-700"
+                size={28}
               />
-              Refresh Data
-            </motion.button>
-          </motion.div>
+              <p className="text-sm text-gray-500">
+                Memuat data produk...
+              </p>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex flex-col items-center px-5 py-16 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-green-50 text-green-700">
+                <FiPackage size={30} />
+              </div>
 
-          {/* Error */}
-          <AnimatePresence>
-            {errorMessage && (
-              <motion.div
-                variants={errorVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="mx-5 flex items-start gap-3 overflow-hidden rounded-xl border border-red-100 bg-red-50 px-4 py-3 sm:mx-6"
+              <h2 className="mt-4 font-bold text-gray-900">
+                Belum ada produk
+              </h2>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-gray-500">
+                Tambahkan produk Roti Sajiyem agar produk dapat dikelola
+                melalui halaman ini.
+              </p>
+
+              <Link
+                href="/admin/produk/tambah"
+                className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-800"
               >
-                <motion.span
-                  animate={{ scale: [1, 1.15, 1] }}
-                  transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="mt-0.5 shrink-0"
-                >
-                  <FiAlertCircle className="h-5 w-5 text-red-500" />
-                </motion.span>
-
-                <div>
-                  <p className="text-sm font-semibold text-red-700">
-                    Terjadi Kesalahan
-                  </p>
-
-                  <p className="mt-1 text-sm leading-5 text-red-600">
-                    {errorMessage}
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence mode="wait">
-            {/* Loading */}
-            {isLoading ? (
-              <motion.div
-                key="loading"
-                variants={stateCardVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="px-6 py-20 text-center"
-              >
-                <motion.div
-                  initial={{ scale: 0.6, opacity: 0, rotate: -20 }}
-                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 200,
-                    delay: 0.1,
-                  }}
-                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50"
-                >
-                  <FiRefreshCw className="h-6 w-6 animate-spin text-green-700" />
-                </motion.div>
-
-                <h3 className="mt-5 text-sm font-bold text-gray-900">
-                  Memuat Produk
-                </h3>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  Sedang mengambil data produk...
-                </p>
-              </motion.div>
-            ) : products.length === 0 ? (
-              /* Empty State */
-              <motion.div
-                key="empty"
-                variants={stateCardVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="px-6 py-20 text-center"
-              >
-                <motion.div
-                  animate={{ y: [0, -8, 0] }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-green-50 text-green-700"
-                >
-                  <FiPackage className="h-7 w-7" />
-                </motion.div>
-
-                <h3 className="mt-5 font-bold text-gray-900">
-                  Belum Ada Produk
-                </h3>
-
-                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-gray-500">
-                  Tambahkan produk Roti Sajiyem
-                  terlebih dahulu agar dapat
-                  dikelola melalui halaman ini.
-                </p>
-
-                <motion.div
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="mt-6 inline-block"
-                >
-                  <Link
-                    href="/admin/produk/tambah"
-                    className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-800"
+                <FiPlus size={18} />
+                Tambah Produk
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* Tampilan HP: kartu produk */}
+              <div className="space-y-3 p-4 sm:p-5 lg:hidden">
+                {products.map((product, index) => (
+                  <article
+                    key={product.id}
+                    className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
                   >
-                    <motion.span
-                      animate={{ rotate: [0, 90, 0] }}
-                      transition={{
-                        duration: 2.5,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      }}
-                    >
-                      <FiPlus className="h-4 w-4" />
-                    </motion.span>
-                    Tambah Produk
-                  </Link>
-                </motion.div>
-              </motion.div>
-            ) : (
-              /* Table */
-              <motion.div
-                key="table"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="overflow-x-auto"
-              >
-                <table className="w-full min-w-[950px] text-left">
-                  <thead className="bg-green-50/70 text-xs uppercase tracking-wider text-green-800">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-50 text-sm font-bold text-green-800">
+                        {String(index + 1).padStart(2, "0")}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <h3 className="break-words font-bold text-gray-900">
+                            {product.name || "Tanpa nama"}
+                          </h3>
+
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                              product.isActive
+                                ? "bg-green-50 text-green-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {product.isActive ? "Aktif" : "Nonaktif"}
+                          </span>
+                        </div>
+
+                        <p className="mt-1 break-all text-[11px] text-gray-400">
+                          ID: {product.id}
+                        </p>
+
+                        <p className="mt-3 text-lg font-bold text-green-700">
+                          {rupiah(product.price)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-[11px] text-gray-500">
+                          Kategori
+                        </p>
+                        <p className="mt-1 break-words text-sm font-medium text-gray-800">
+                          {product.category || "-"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-[11px] text-gray-500">
+                          Rasa
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-800">
+                          {product.taste || "-"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-[11px] text-gray-500">
+                          Ukuran
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-800">
+                          {product.size || "-"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-[11px] text-gray-500">
+                          Nomor Produk
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-800">
+                          #{index + 1}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4">
+                      <Link
+                        href={`/admin/produk/${product.id}`}
+                        aria-label={`Edit ${product.name}`}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-green-200 px-3 py-2 text-sm font-semibold text-green-700 transition hover:bg-green-50"
+                      >
+                        <FiEdit2 size={16} />
+                        Edit
+                      </Link>
+
+                      <button
+                        type="button"
+                        disabled={deletingId === product.id}
+                        onClick={() => void handleDelete(product)}
+                        aria-label={`Hapus ${product.name}`}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                      >
+                        <FiTrash2 size={16} />
+                        {deletingId === product.id
+                          ? "Menghapus..."
+                          : "Hapus"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {/* Tampilan desktop: tabel */}
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-green-50 text-xs uppercase tracking-wide text-green-800">
                     <tr>
-                      <th className="px-6 py-4 font-bold">
-                        No
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Nama Produk
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Kategori
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Varian
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Rasa
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Harga
-                      </th>
-
-                      <th className="px-6 py-4 font-bold">
-                        Status
-                      </th>
-
-                      <th className="px-6 py-4 text-center font-bold">
-                        Aksi
-                      </th>
+                      <th className="whitespace-nowrap px-5 py-4">No</th>
+                      <th className="px-5 py-4">Nama Produk</th>
+                      <th className="px-5 py-4">Kategori</th>
+                      <th className="px-5 py-4">Rasa</th>
+                      <th className="px-5 py-4">Ukuran</th>
+                      <th className="px-5 py-4">Harga</th>
+                      <th className="px-5 py-4">Status</th>
+                      <th className="px-5 py-4 text-center">Aksi</th>
                     </tr>
                   </thead>
 
-                  <motion.tbody
-                    variants={tbodyVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="divide-y divide-gray-100"
-                  >
-                    <AnimatePresence>
-                      {products.map(
-                        (product, index) => (
-                          <motion.tr
-                            key={product.id}
-                            variants={rowVariants}
-                            exit="exit"
-                            layout
-                            className="group transition hover:bg-green-50/40"
+                  <tbody className="divide-y divide-gray-100">
+                    {products.map((product, index) => (
+                      <tr
+                        key={product.id}
+                        className="transition hover:bg-green-50/40"
+                      >
+                        <td className="px-5 py-4 text-gray-500">
+                          {index + 1}
+                        </td>
+
+                        <td className="max-w-[260px] px-5 py-4">
+                          <p className="break-words font-semibold text-gray-900">
+                            {product.name || "-"}
+                          </p>
+                          <p className="mt-1 break-all text-[11px] text-gray-400">
+                            ID: {product.id}
+                          </p>
+                        </td>
+
+                        <td className="px-5 py-4 text-gray-700">
+                          {product.category || "-"}
+                        </td>
+
+                        <td className="px-5 py-4 text-gray-700">
+                          {product.taste || "-"}
+                        </td>
+
+                        <td className="px-5 py-4 text-gray-700">
+                          {product.size || "-"}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 font-semibold text-green-700">
+                          {rupiah(product.price)}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
+                              product.isActive
+                                ? "bg-green-50 text-green-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
                           >
-                            {/* No */}
-                            <td className="px-6 py-4">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-50 text-xs font-bold text-gray-500 group-hover:bg-white">
-                                {index + 1}
-                              </div>
-                            </td>
+                            {product.isActive ? "Aktif" : "Nonaktif"}
+                          </span>
+                        </td>
 
-                            {/* Nama */}
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <motion.div
-                                  whileHover={{
-                                    rotate: 10,
-                                    scale: 1.1,
-                                  }}
-                                  transition={{
-                                    type: "spring",
-                                    stiffness: 300,
-                                  }}
-                                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700"
-                                >
-                                  <FiPackage className="h-4 w-4" />
-                                </motion.div>
+                        <td className="px-5 py-4">
+                          <div className="flex justify-center gap-2">
+                            <Link
+                              aria-label={`Edit ${product.name}`}
+                              title="Edit produk"
+                              href={`/admin/produk/${product.id}`}
+                              className="rounded-lg border border-green-200 p-2.5 text-green-700 transition hover:bg-green-50"
+                            >
+                              <FiEdit2 size={17} />
+                            </Link>
 
-                                <div>
-                                  <p className="font-semibold text-gray-900">
-                                    {product.name}
-                                  </p>
-
-                                  <p className="mt-0.5 text-xs text-gray-400">
-                                    ID: {product.id.slice(0, 8)}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Kategori */}
-                            <td className="px-6 py-4">
-                              <span className="inline-flex rounded-lg bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600">
-                                {product.category}
-                              </span>
-                            </td>
-
-                            {/* Varian */}
-                            <td className="px-6 py-4 text-sm text-gray-600">
-                              {product.variant || "-"}
-                            </td>
-
-                            {/* Rasa */}
-                            <td className="px-6 py-4 text-sm text-gray-600">
-                              {product.taste || "-"}
-                            </td>
-
-                            {/* Harga */}
-                            <td className="px-6 py-4">
-                              <p className="text-sm font-bold text-green-700">
-                                Rp{" "}
-                                {product.price.toLocaleString(
-                                  "id-ID"
-                                )}
-                              </p>
-                            </td>
-
-                            {/* Status */}
-                            <td className="px-6 py-4">
-                              {product.isActive ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700">
-                                  <FiCheckCircle className="h-3.5 w-3.5" />
-                                  Aktif
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-600">
-                                  <FiAlertCircle className="h-3.5 w-3.5" />
-                                  Tidak Aktif
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Aksi */}
-                            <td className="px-6 py-4">
-                              <div className="flex justify-center gap-2">
-                                {/* Edit */}
-                                <motion.div
-                                  whileHover={{ scale: 1.1, y: -2 }}
-                                  whileTap={{ scale: 0.9 }}
-                                >
-                                  <Link
-                                    href={`/admin/produk/${product.id}/edit`}
-                                    title="Edit produk"
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-green-100 bg-white text-green-700 transition hover:border-green-200 hover:bg-green-50"
-                                  >
-                                    <motion.span
-                                      whileHover={{ rotate: 15 }}
-                                      transition={{
-                                        type: "spring",
-                                        stiffness: 300,
-                                      }}
-                                    >
-                                      <FiEdit2 className="h-4 w-4" />
-                                    </motion.span>
-                                  </Link>
-                                </motion.div>
-
-                                {/* Hapus */}
-                                <motion.button
-                                  type="button"
-                                  disabled={
-                                    deletingId ===
-                                    product.id
-                                  }
-                                  onClick={() =>
-                                    handleDelete(
-                                      product.id,
-                                      product.name
-                                    )
-                                  }
-                                  title="Hapus produk"
-                                  whileHover={{ scale: 1.1, y: -2 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-white text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {deletingId ===
-                                  product.id ? (
-                                    <FiRefreshCw className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <motion.span
-                                      whileHover={{
-                                        rotate: [0, -15, 15, 0],
-                                      }}
-                                      transition={{
-                                        duration: 0.4,
-                                      }}
-                                    >
-                                      <FiTrash2 className="h-4 w-4" />
-                                    </motion.span>
-                                  )}
-                                </motion.button>
-                              </div>
-                            </td>
-                          </motion.tr>
-                        )
-                      )}
-                    </AnimatePresence>
-                  </motion.tbody>
+                            <button
+                              type="button"
+                              title="Hapus produk"
+                              aria-label={`Hapus ${product.name}`}
+                              disabled={deletingId === product.id}
+                              onClick={() =>
+                                void handleDelete(product)
+                              }
+                              className="rounded-lg border border-red-200 p-2.5 text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <FiTrash2 size={17} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Bottom Information */}
-        <AnimatePresence>
-          {!isLoading && products.length > 0 && (
-            <motion.div
-              variants={bottomInfoVariants}
-              initial="hidden"
-              animate="visible"
-              exit={{ opacity: 0 }}
-              className="mt-5 flex flex-col gap-2 text-xs text-gray-400 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p>
-                Menampilkan{" "}
-                <span className="font-semibold text-gray-600">
-                  {products.length}
-                </span>{" "}
-                produk
-              </p>
-
-              <div className="flex items-center gap-2">
-                <motion.span
-                  animate={{ rotate: [0, 15, -15, 0] }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                >
-                  <FiCheckCircle className="h-3.5 w-3.5 text-green-600" />
-                </motion.span>
-                <span>
-                  Data tersimpan di Firestore
-                </span>
               </div>
-            </motion.div>
+
+              {/* Footer tabel */}
+              <footer className="flex flex-col gap-2 border-t border-green-100 bg-gray-50/70 px-5 py-4 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  Menampilkan{" "}
+                  <span className="font-semibold text-gray-800">
+                    {products.length}
+                  </span>{" "}
+                  produk
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <FiTag size={14} />
+                  Data produk Roti Sajiyem
+                </p>
+              </footer>
+            </>
           )}
-        </AnimatePresence>
-      </main>
-    </div>
+        </section>
+      </div>
+    </main>
   );
 }

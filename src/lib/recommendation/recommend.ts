@@ -1,12 +1,13 @@
-import { Product } from "@/types/product";
-import { calculateTFIDF } from "./tfidf";
+
+import type { Product } from "@/types/product";
+import { calculateTfIdf } from "./tfidf";
 import { cosineSimilarity } from "./cosineSimilarity";
 
-export type RecommendationPreferences = {
-  occasion?: string;
+export type RecommendationFilters = {
+  taste?: string;
+  size?: string;
   minPrice?: number;
   maxPrice?: number;
-  size?: string;
 };
 
 export type RecommendationResult = {
@@ -14,311 +15,192 @@ export type RecommendationResult = {
   similarity: number;
 };
 
-/**
- * Memeriksa kesesuaian produk dengan acara
- * yang dipilih pelanggan.
- */
-function matchesOccasion(
-  product: Product,
-  occasion?: string
-): boolean {
-  if (!occasion) {
-    return false;
-  }
-
-  if (
-    !product.occasion ||
-    product.occasion.length === 0
-  ) {
-    return false;
-  }
-
-  return product.occasion.some(
-    (item) =>
-      item.toLowerCase().trim() ===
-      occasion.toLowerCase().trim()
-  );
+function normalize(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
 }
 
-/**
- * Memeriksa apakah harga produk berada
- * dalam range harga yang dipilih pelanggan.
- */
-function matchesPrice(
-  product: Product,
-  minPrice?: number,
-  maxPrice?: number
-): boolean {
-  if (
-    minPrice === undefined &&
-    maxPrice === undefined
-  ) {
-    return false;
-  }
+function isProductActive(product: Product): boolean {
+  const status = (
+    product as Product & { isActive?: boolean }
+  ).isActive;
 
-  const price = Number(product.price) || 0;
-
-  if (
-    minPrice !== undefined &&
-    price < minPrice
-  ) {
-    return false;
-  }
-
-  if (
-    maxPrice !== undefined &&
-    price > maxPrice
-  ) {
-    return false;
-  }
-
-  return true;
+  // Produk lama tanpa isActive dianggap aktif.
+  return status !== false;
 }
 
-/**
- * Memeriksa kesesuaian ukuran produk.
- */
-function matchesSize(
-  product: Product,
-  size?: string
-): boolean {
-  if (
-    !size ||
-    size === "Semua Ukuran"
-  ) {
-    return false;
-  }
-
-  if (!product.size) {
-    return false;
-  }
-
-  const productSize =
-    product.size
-      .toLowerCase()
-      .replace(/\s/g, "");
-
-  const selectedSize =
-    size
-      .toLowerCase()
-      .replace(/\s/g, "");
-
-  return productSize.includes(
-    selectedSize
-  );
+function productText(product: Product): string {
+  return [
+    product.name,
+    product.category,
+    product.taste,
+    product.size,
+  ]
+    .map(normalize)
+    .filter(Boolean)
+    .join(" ");
 }
 
-/**
- * Menghasilkan rekomendasi produk
- * menggunakan metode Content-Based Filtering.
- *
- * Kategori digunakan sebagai preferensi utama.
- *
- * Metode:
- *
- * 1. Mengambil produk aktif.
- * 2. Membentuk profil kategori.
- * 3. Menghitung TF-IDF.
- * 4. Menghitung Cosine Similarity.
- * 5. Menghitung preferensi tambahan:
- *    - Acara
- *    - Harga
- *    - Ukuran
- * 6. Menggabungkan nilai similarity
- *    dengan preferensi pengguna.
- * 7. Mengurutkan produk berdasarkan
- *    skor rekomendasi tertinggi.
- */
+function isValidPrice(value: unknown): boolean {
+  const price = Number(value);
+  return Number.isFinite(price) && price > 0;
+}
+
 export function getRecommendations(
-  selectedCategory: string,
+  category: string,
   products: Product[],
-  preferences: RecommendationPreferences = {},
-  limit: number = 5
+  filters: RecommendationFilters = {},
+  limit = 5
 ): RecommendationResult[] {
-  /**
-   * Validasi kategori.
-   */
-  if (!selectedCategory?.trim()) {
+  // Validasi input utama.
+  if (!category.trim() || !Array.isArray(products)) {
     return [];
   }
 
-  /**
-   * Hanya produk aktif yang digunakan
-   * dalam sistem rekomendasi.
-   */
-  const activeProducts =
-    products.filter(
-      (product) => product.isActive
+  const normalizedCategory = normalize(category);
+
+  // Tahap 1: kategori wajib dan status produk.
+  // Tidak pernah mengambil produk dari kategori lain.
+  const categoryProducts = products.filter(
+    (product) =>
+      isProductActive(product) &&
+      normalize(product.category) === normalizedCategory &&
+      isValidPrice(product.price)
+  );
+
+  if (categoryProducts.length === 0) {
+    console.warn(
+      "[Rekomendasi] Produk tidak ditemukan pada kategori:",
+      category
     );
 
-  /**
-   * Tidak dapat melakukan rekomendasi
-   * jika tidak terdapat produk aktif.
-   */
-  if (activeProducts.length === 0) {
     return [];
   }
 
-  /**
-   * Membentuk profil kategori.
-   *
-   * Kategori menjadi preferensi utama
-   * pengguna.
-   */
-  const categoryProfile: Product = {
-    id: "__category_profile__",
-    name: "",
-    category: selectedCategory,
-    variant: "",
-    taste: "",
-    filling: "",
-    size: "",
-    shape: "",
-    quantity: "",
-    occasion: [],
-    price: 0,
-    description: "",
-    imageUrl: "",
-    isActive: true,
-    createdAt: null,
-  };
+  // Tahap 2: filter preferensi tambahan.
+  const filteredProducts = categoryProducts.filter((product) => {
+    if (
+      filters.taste?.trim() &&
+      normalize(product.taste) !== normalize(filters.taste)
+    ) {
+      return false;
+    }
 
-  /**
-   * Menggabungkan produk aktif dengan
-   * profil kategori.
-   */
-  const allProducts = [
-    ...activeProducts,
-    categoryProfile,
-  ];
+    if (
+      filters.size?.trim() &&
+      normalize(product.size) !== normalize(filters.size)
+    ) {
+      return false;
+    }
 
-  /**
-   * Menghitung TF-IDF seluruh produk.
-   */
-  const tfidfVectors =
-    calculateTFIDF(allProducts);
+    const price = Number(product.price);
 
-  /**
-   * Profil kategori berada pada posisi
-   * terakhir dalam array.
-   */
-  const categoryIndex =
-    allProducts.length - 1;
+    if (
+      filters.minPrice !== undefined &&
+      price < filters.minPrice
+    ) {
+      return false;
+    }
 
-  /**
-   * Vector TF-IDF dari kategori pilihan.
-   */
-  const categoryVector =
-    tfidfVectors[categoryIndex];
+    if (
+      filters.maxPrice !== undefined &&
+      price > filters.maxPrice
+    ) {
+      return false;
+    }
 
-  /**
-   * Menghitung rekomendasi untuk setiap
-   * produk aktif.
-   */
-  const recommendations =
-    activeProducts.map(
-      (product, index) => {
-        /**
-         * Menghitung Cosine Similarity
-         * antara kategori pilihan dengan
-         * produk.
-         */
-        const similarity =
-          cosineSimilarity(
-            categoryVector,
-            tfidfVectors[index]
-          );
+    return true;
+  });
 
-        /**
-         * Menghitung skor preferensi tambahan.
-         *
-         * Acara = 10%
-         * Harga = 10%
-         * Ukuran = 10%
-         */
-        let preferenceScore = 0;
-
-        /**
-         * Preferensi acara.
-         */
-        if (
-          preferences.occasion &&
-          matchesOccasion(
-            product,
-            preferences.occasion
-          )
-        ) {
-          preferenceScore += 0.1;
-        }
-
-        /**
-         * Preferensi harga.
-         */
-        if (
-          (
-            preferences.minPrice !== undefined ||
-            preferences.maxPrice !== undefined
-          ) &&
-          matchesPrice(
-            product,
-            preferences.minPrice,
-            preferences.maxPrice
-          )
-        ) {
-          preferenceScore += 0.1;
-        }
-
-        /**
-         * Preferensi ukuran.
-         */
-        if (
-          preferences.size &&
-          preferences.size !== "Semua Ukuran" &&
-          matchesSize(
-            product,
-            preferences.size
-          )
-        ) {
-          preferenceScore += 0.1;
-        }
-
-        /**
-         * Similarity menjadi dasar utama
-         * rekomendasi dengan bobot 70%.
-         *
-         * Preferensi tambahan memiliki
-         * bobot maksimal 30%.
-         */
-        const finalScore =
-          similarity * 0.7 +
-          preferenceScore;
-
-        return {
-          product,
-          similarity: Math.min(
-            finalScore,
-            1
-          ),
-        };
+  if (filteredProducts.length === 0) {
+    console.warn(
+      "[Rekomendasi] Tidak ada produk yang memenuhi filter.",
+      {
+        category,
+        filters,
+        jumlahProdukKategori: categoryProducts.length,
       }
     );
 
-  /**
-   * Mengurutkan berdasarkan skor
-   * rekomendasi tertinggi.
-   */
-  recommendations.sort(
-    (a, b) =>
-      b.similarity -
-      a.similarity
+    return [];
+  }
+
+  // Tahap 3: membentuk profil preferensi pengguna.
+  // Harga dipakai sebagai filter numerik, bukan token TF-IDF.
+  const preferenceText = [
+    category,
+    filters.taste ?? "",
+    filters.size ?? "",
+  ]
+    .map(normalize)
+    .filter(Boolean)
+    .join(" ");
+
+  // Dokumen pertama adalah profil preferensi.
+  // Dokumen berikutnya adalah deskripsi tiap produk.
+  const documents = [
+    preferenceText,
+    ...filteredProducts.map(productText),
+  ];
+
+  // Tahap 4: pembobotan TF-IDF.
+  const vectors = calculateTfIdf(documents);
+
+  if (
+    !Array.isArray(vectors) ||
+    vectors.length !== documents.length ||
+    !vectors.every(
+      (vector) =>
+        Array.isArray(vector) &&
+        vector.every((value) => Number.isFinite(value))
+    )
+  ) {
+    console.error(
+      "[Rekomendasi] Hasil vektor TF-IDF tidak valid."
+    );
+
+    return [];
+  }
+
+  const preferenceVector = vectors[0];
+
+  // Tahap 5: Cosine Similarity dan pemeringkatan.
+  const rankedProducts = filteredProducts.map(
+    (product, index): RecommendationResult => {
+      const rawSimilarity = cosineSimilarity(
+        preferenceVector,
+        vectors[index + 1]
+      );
+
+      // Menjaga skor berada dalam rentang 0 sampai 1.
+      const similarity = Number.isFinite(rawSimilarity)
+        ? Math.min(1, Math.max(0, rawSimilarity))
+        : 0;
+
+      return {
+        product,
+        similarity,
+      };
+    }
   );
 
-  /**
-   * Mengambil sejumlah produk sesuai
-   * dengan batas rekomendasi.
-   */
-  return recommendations.slice(
-    0,
-    limit
-  );
+  rankedProducts.sort((a, b) => {
+    if (b.similarity !== a.similarity) {
+      return b.similarity - a.similarity;
+    }
+
+    // Urutan stabil apabila skor sama.
+    return a.product.name.localeCompare(
+      b.product.name,
+      "id-ID"
+    );
+  });
+
+  // Tahap 6: mengambil sejumlah hasil yang diminta.
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.floor(limit))
+    : 5;
+
+  return rankedProducts.slice(0, safeLimit);
 }

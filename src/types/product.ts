@@ -2,17 +2,22 @@ export type Product = {
   id: string;
   name: string;
   category: string;
-  variant: string;
   taste: string;
-  filling: string;
   size: string;
-  shape: string;
-  quantity: string;
-  occasion: string[];
   price: number;
-  description: string;
-  imageUrl: string;
+
+  // Atribut pendukung tampilan aplikasi
+  variant?: string;
+  filling?: string;
+  shape?: string;
+  quantity?: string;
+  occasion?: string[];
+  description?: string;
+  imageUrl?: string;
+
   isActive: boolean;
-  createdAt: unknown;
+  createdAt?: unknown;
   updatedAt?: unknown;
 };
+
+export type TFIDFVector = Record<string, number>;

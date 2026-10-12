@@ -1,93 +1,38 @@
 /**
- * Menghitung Cosine Similarity antara dua vector.
- *
- * Nilai:
- * 1   = sangat mirip
- * 0   = tidak memiliki kemiripan
+ * Menghitung Cosine Similarity dua vektor.
+ * Nilai skor dibatasi pada rentang 0 sampai 1.
  */
 export function cosineSimilarity(
-  vectorA: Record<string, number>,
-  vectorB: Record<string, number>
+  vectorA: number[],
+  vectorB: number[]
 ): number {
-  /**
-   * Mengambil seluruh kata/term yang terdapat
-   * pada kedua vector.
-   */
-  const terms = new Set([
-    ...Object.keys(vectorA),
-    ...Object.keys(vectorB),
-  ]);
+  if (vectorA.length === 0 || vectorA.length !== vectorB.length) {
+    return 0;
+  }
 
   let dotProduct = 0;
   let magnitudeA = 0;
   let magnitudeB = 0;
 
-  /**
-   * Menghitung:
-   *
-   * Dot Product = Σ(A × B)
-   */
-  terms.forEach((term) => {
-    const valueA = vectorA[term] || 0;
-    const valueB = vectorB[term] || 0;
-
-    dotProduct += valueA * valueB;
-  });
-
-  /**
-   * Menghitung panjang/magnitude vector A.
-   *
-   * √Σ(A²)
-   */
-  Object.values(vectorA).forEach((value) => {
-    magnitudeA += value * value;
-  });
-
-  magnitudeA = Math.sqrt(magnitudeA);
-
-  /**
-   * Menghitung panjang/magnitude vector B.
-   *
-   * √Σ(B²)
-   */
-  Object.values(vectorB).forEach((value) => {
-    magnitudeB += value * value;
-  });
-
-  magnitudeB = Math.sqrt(magnitudeB);
-
-  /**
-   * Jika salah satu vector tidak memiliki nilai,
-   * maka tidak ada kemiripan.
-   */
-  if (magnitudeA === 0 || magnitudeB === 0) {
-    return 0;
+  for (let i = 0; i < vectorA.length; i += 1) {
+    dotProduct += vectorA[i] * vectorB[i];
+    magnitudeA += vectorA[i] * vectorA[i];
+    magnitudeB += vectorB[i] * vectorB[i];
   }
 
-  /**
-   * Rumus Cosine Similarity:
-   *
-   *        A · B
-   * -----------------
-   *   |A| × |B|
-   */
-  const similarity =
-    dotProduct / (magnitudeA * magnitudeB);
+  const denominator = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);
+  if (denominator === 0) return 0;
 
-  /**
-   * Memastikan nilai berada pada rentang 0–1.
-   */
-  return Math.max(0, Math.min(1, similarity));
+  const score = dotProduct / denominator;
+  return Math.max(0, Math.min(1, score));
 }
 
 /**
- * Mengubah nilai similarity menjadi persentase.
- *
- * Contoh:
- * 0.85 → 85%
+ * Mengubah skor similarity 0–1 menjadi angka persentase 0–100.
+ * Contoh: 0.734 -> 73.
  */
-export function similarityToPercentage(
-  similarity: number
-): number {
-  return Math.round(similarity * 100);
+export function similarityToPercentage(similarity: number): number {
+  if (!Number.isFinite(similarity)) return 0;
+  const bounded = Math.max(0, Math.min(1, similarity));
+  return Math.round(bounded * 100);
 }
